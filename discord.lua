@@ -13,9 +13,50 @@ local death_list = {
     mutatedbearger=1, mutateddeerclops=1, mutatedwarg=1, daywalker=1, daywalker2=1
 }
 
-local spawn_list = {
-    antlion=1, dragonfly=1, minotaur=1, toadstool_cap=1, beequeenhivegrown = 1,
-}
+local function IsMasterShard()
+    local shard = GLOBAL.TheShard
+    return shard and shard:GetShardId() == "1"
+end
+
+local function WriteOnlinePlayers()
+    local players = {}
+    for _, player in ipairs(GLOBAL.AllPlayers) do
+        local days = 0
+        if player.components and player.components.age then
+            days = math.floor(player.components.age:GetAgeInDays() or 0)
+        end
+
+        table.insert(players, {
+            name = player.name,
+            userid = player.userid,
+            prefab = player.prefab,
+            days_survived = days
+        })
+    end
+
+    local json_data = json.encode({ players = players })
+    GLOBAL.TheSim:SetPersistentString("online_players.json", json_data, false)
+end
+
+local function WriteWorldStatus()
+    if not IsMasterShard() then return end
+
+    local state = GLOBAL.TheWorld and GLOBAL.TheWorld.state
+    if not state then return end
+
+    local season = state.season or "unknown"
+    local day = (state.cycles or 0) + 1
+    local days_remaining = state.remainingdaysinseason or 0
+
+    local data = {
+        season = season,
+        current_day = day,
+        days_remaining = days_remaining
+    }
+
+    local json_data = json.encode(data)
+    GLOBAL.TheSim:SetPersistentString("world_status.json", json_data, false)
+end
 
 -- Tên hiển thị boss
 local name_map = {
@@ -216,20 +257,14 @@ end
 
 -- 🚀 Chờ TheWorld khởi tạo
 local function WaitForTheWorld()
-    while GLOBAL.TheWorld == nil do
-        coroutine.yield(1)
-    end
-
-    print("[DiscordScript] ✅ Bắt đầu chạy khi TheWorld sẵn sàng")
-
+    while GLOBAL.TheWorld == nil do coroutine.yield(1) end
+    print("[DiscordScript] ✅ Bắt đầu khi TheWorld sẵn sàng")
     GLOBAL.TheWorld:DoPeriodicTask(5, AttachDeathListeners)
     GLOBAL.TheWorld:DoPeriodicTask(5, TrackBossSpawners)
     GLOBAL.TheWorld:DoPeriodicTask(1, CheckCommand)
     GLOBAL.TheWorld:DoPeriodicTask(1, CheckQueue)
-
-    local flag = json.encode({ rolling_back = false })
-    GLOBAL.TheSim:SetPersistentString("rollback_flag.json", flag, false)
-	GLOBAL.TheNet:Announce("[Restart complete]")
+    GLOBAL.TheWorld:DoPeriodicTask(60, WriteOnlinePlayers)
+    GLOBAL.TheWorld:DoPeriodicTask(60, WriteWorldStatus)
 end
 
 -- Gọi coroutine
